@@ -47,7 +47,7 @@ export function AllTracksList({
             borderRadius: "4px",
             padding: "8px 12px",
             color: "var(--text-main)",
-            fontSize: "13px",
+            fontSize: "14px",
             outline: "none",
           }}
         />
@@ -55,7 +55,6 @@ export function AllTracksList({
 
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
         {filteredTracks.map((track) => {
-          // Encontrar el índice real en la lista original para reproducir correctamente
           const originalIndex = tracks.findIndex(t => t.id === track.id);
           const isSelected = selectedIds.includes(track.id);
           const isCurrent = currentIndex === originalIndex;
