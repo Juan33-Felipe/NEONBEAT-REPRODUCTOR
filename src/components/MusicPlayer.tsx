@@ -145,7 +145,14 @@ export function MusicPlayer() {
           <button 
             onClick={async () => {
               const found = await Scanner.scanFolder();
-              if (found.length) setAllTracks(found);
+              console.log("Canciones encontradas:", found.length);
+                if (found.length > 0) {
+                  setAllTracks(found);
+                } else {
+                  alert("No se encontraron canciones. Asegúrate de seleccionar una carpeta con archivos de música.");
+                }
+
+                
             }} 
             style={{ background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer" }}
           >
