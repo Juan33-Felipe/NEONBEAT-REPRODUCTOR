@@ -73,7 +73,6 @@ export function MusicPlayer() {
     };
   }, [player, syncPlayerState]);
 
-  // Se guarda en el historial si se escucha mas de 5 segundos
   useEffect(() => {
     if (!currentTrack || !playing) return;
     if (progress > 5 && lastHistoryId.current !== currentTrack.id) {
@@ -124,7 +123,7 @@ export function MusicPlayer() {
       }}>
         <span style={{ fontSize: "22px", fontWeight: 900, color: "var(--text-main)" }}>NEONBEAT</span>
         
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
           <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "24px" }}>
             {isDarkMode ? "☀️" : "🌙"}
           </button>
@@ -142,22 +141,36 @@ export function MusicPlayer() {
             </button>
           )}
 
-          <button 
-            onClick={async () => {
-              const found = await Scanner.scanFolder();
-              console.log("Canciones encontradas:", found.length);
-                if (found.length > 0) {
-                  setAllTracks(found);
-                } else {
-                  alert("No se encontraron canciones. Asegúrate de seleccionar una carpeta con archivos de música.");
-                }
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button 
+              onClick={async () => {
+                const found = await Scanner.scanFolder();
+                if (found.length) setAllTracks(prev => [...prev, ...found]);
+              }} 
+              style={{ background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer" }}
+            >
+              CARGAR CARPETA
+            </button>
 
-                
-            }} 
-            style={{ background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer" }}
-          >
-            CARGAR BIBLIOTECA
-          </button>
+            <button 
+              onClick={async () => {
+                const track = await Scanner.scanSingleFile();
+                if (track) setAllTracks(prev => [...prev, track]);
+              }} 
+              style={{ 
+                background: mood.primary, 
+                border: "none", 
+                color: "#000", 
+                padding: "8px 16px", 
+                fontSize: "12px", 
+                borderRadius: "6px", 
+                cursor: "pointer",
+                fontWeight: "bold"
+              }}
+            >
+              SELECCIONAR ARCHIVO
+            </button>
+          </div>
         </div>
       </div>
 
