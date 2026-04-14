@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --bg-base: #070c0b;
+  --bg-card: #090e0d;
+  --bg-panel: #080d0c;
+  --border-subtle: rgba(255,255,255,0.05);
+  --border-faint: rgba(255,255,255,0.04);
+  --text-primary: rgba(255,255,255,0.88);
+  --text-secondary: rgba(255,255,255,0.55);
+  --text-muted: rgba(255,255,255,0.30);
+  --text-ghost: rgba(255,255,255,0.14);
+}
+
+/* Bloqueo de scroll global */
+html, body {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden; /* Evita que la ventana completa haga scroll */
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* Scrollbars minimalistas para las listas internas */
+::-webkit-scrollbar { 
+  width: 3px; 
+}
+
+::-webkit-scrollbar-track { 
+  background: transparent; 
+}
+
+::-webkit-scrollbar-thumb { 
+  background: rgba(255,255,255,0.08); 
+  border-radius: 2px; 
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+/* Contenedor de scroll interno para las listas */
+.scrollable-content {
+  flex: 1;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior: contain; /* Evita el bounce del scroll en navegadores */
+}
+
+/* Animaciones de las barras de reproducción */
+@keyframes wb0 { from { height: 2px } to { height: 6px } }
+@keyframes wb1 { from { height: 4px } to { height: 10px } }
+@keyframes wb2 { from { height: 3px } to { height: 7px } }
+@keyframes wb3 { from { height: 5px } to { height: 11px } }
+@keyframes wb4 { from { height: 2px } to { height: 8px } }
+
+/* Estilización de inputs de rango (Progreso y Volumen) */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: currentColor; /* Usa el color del texto/mood definido inline */
+  margin-top: -4px;
+  transition: transform 0.15s;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
