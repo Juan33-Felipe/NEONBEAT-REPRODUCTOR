@@ -194,11 +194,13 @@ export function PlayerControls({
           onChange={e => onVolumeChange(parseFloat(e.target.value))}
           style={{
             flex: 1, 
-            height: "2px", 
+            height: "4px", 
             cursor: "pointer", 
             outline: "none", 
             appearance: "none",
             background: `linear-gradient(to right, ${mood.primary} ${volume * 100}%, var(--border-faint) ${volume * 100}%)`,
+            color: mood.primary,      
+            accentColor: mood.primary
           }}
         />
       </div>
