@@ -73,7 +73,7 @@ export function MusicPlayer() {
     };
   }, [player, syncPlayerState]);
 
-  // LÓGICA DEL HISTORIAL: Se guarda si se escuchan más de 5 segundos
+  // Se guarda en el historial si se escucha mas de 5 segundos
   useEffect(() => {
     if (!currentTrack || !playing) return;
     if (progress > 5 && lastHistoryId.current !== currentTrack.id) {
@@ -122,10 +122,10 @@ export function MusicPlayer() {
         padding: "12px 24px", borderBottom: "1px solid var(--border-faint)", 
         background: "var(--bg-card)", zIndex: 10 
       }}>
-        <span style={{ fontSize: "12px", fontWeight: 800, color: "var(--text-main)" }}>NEONBEAT</span>
+        <span style={{ fontSize: "22px", fontWeight: 900, color: "var(--text-main)" }}>NEONBEAT</span>
         
         <div style={{ display: "flex", gap: "12px" }}>
-          <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+          <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "24px" }}>
             {isDarkMode ? "☀️" : "🌙"}
           </button>
           
@@ -136,7 +136,7 @@ export function MusicPlayer() {
                 playAt(0, selected);
                 setSelectedIds([]);
               }} 
-              style={{ background: mood.primary, color: "#000", border: "none", padding: "6px 14px", fontSize: "10px", fontWeight: 800, borderRadius: "2px", cursor: "pointer" }}
+              style={{ background: mood.primary, color: "#000", border: "none", padding: "8px 16px", fontSize: "12px", fontWeight: 900, borderRadius: "4px", cursor: "pointer" }}
             >
               REPRODUCIR SELECCIÓN ({selectedIds.length})
             </button>
@@ -147,7 +147,7 @@ export function MusicPlayer() {
               const found = await Scanner.scanFolder();
               if (found.length) setAllTracks(found);
             }} 
-            style={{ background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, padding: "6px 14px", fontSize: "10px", borderRadius: "2px", cursor: "pointer" }}
+            style={{ background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer" }}
           >
             CARGAR BIBLIOTECA
           </button>
