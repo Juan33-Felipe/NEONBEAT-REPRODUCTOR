@@ -50,7 +50,7 @@ export function QueuePanel({
               background: "none", 
               border: "none", 
               padding: "12px 0",
-              fontSize: "10px",
+              fontSize: "11px",
               fontWeight: 700,
               letterSpacing: "1px",
               textTransform: "uppercase",
@@ -67,7 +67,7 @@ export function QueuePanel({
 
       <div style={{ flex: 1, overflowY: "auto" }} className="scrollable-content">
         
-        {/* VISTA: AHORA */}
+        {/* VISTA: REPRODUCIENDO */}
         {view === "ahora" && currentTrack && (
           <div style={{ padding: "24px" }}>
             <p style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "12px" }}>
@@ -89,17 +89,17 @@ export function QueuePanel({
           </div>
         )}
 
-        {/* VISTA: PRÓXIMAS (LISTA DE ESPERA) */}
+        {/* VISTA: PRÓXIMAS  */}
         {view === "próximas" && (
-          <div style={{ padding: "8px 0" }}>
+          <div style={{ padding: "7px 0" }}>
             {tracks.slice(currentIndex + 1).length > 0 ? (
               tracks.slice(currentIndex + 1).map((t, i) => (
-                <div key={t.id} style={{ display: "flex", padding: "12px 16px", alignItems: "center", borderBottom: "1px solid var(--border-faint)" }}>
+                <div key={t.id} style={{ display: "flex", padding: "13px 16px", alignItems: "center", borderBottom: "1px solid var(--border-faint)" }}>
                   <p 
                     style={{ 
                       flex: 1, 
                       fontSize: "12px", 
-                      color: "var(--text-main)", // CORREGIDO: Antes era invisible
+                      color: "var(--text-main)", 
                       cursor: "pointer",
                       margin: 0
                     }} 
@@ -109,7 +109,7 @@ export function QueuePanel({
                   </p>
                   <button 
                     onClick={() => onRemoveTrack(currentIndex + 1 + i)} 
-                    style={{ background: "none", border: "none", color: "#ff5a5a", cursor: "pointer", fontSize: "14px", padding: "0 8px" }}
+                    style={{ background: "none", border: "none", color: "#ff5a5a", cursor: "pointer", fontSize: "16px", padding: "0 8px" }}
                   >
                     ✕
                   </button>
@@ -131,17 +131,17 @@ export function QueuePanel({
                     style={{ 
                       flex: 1, 
                       fontSize: "12px", 
-                      color: "var(--text-main)", // CORREGIDO: Antes era invisible
+                      color: "var(--text-main)", 
                       cursor: "pointer",
                       margin: 0
                     }}
                     onClick={() => {
-                        // Lógica para reproducir desde historial si lo deseas
+                        
                     }}
                   >
                     {t.title}
                   </p>
-                  <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>Visto</span>
+                  <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Visto</span>
                 </div>
               ))
             ) : (
