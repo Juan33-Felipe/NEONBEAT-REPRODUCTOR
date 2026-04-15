@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Track } from "../shared/Models";
 import { Mood } from "../services/moodDetector";
 
@@ -16,6 +17,8 @@ interface Props {
   onSetView: (v: QueueView) => void;
   onPlayAt: (i: number) => void;
   onRemoveTrack: (i: number) => void;
+  // Nueva prop para el reordenamiento
+  onReorder?: (draggedIndex: number, targetIndex: number) => void;
 }
 
 export function QueuePanel({ 
@@ -26,8 +29,10 @@ export function QueuePanel({
   view, 
   onSetView, 
   onPlayAt, 
-  onRemoveTrack 
+  onRemoveTrack,
+  onReorder 
 }: Props) {
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const currentTrack = tracks[currentIndex] ?? null;
 
   return (
@@ -89,32 +94,75 @@ export function QueuePanel({
           </div>
         )}
 
-        {/* VISTA: PRÓXIMAS  */}
+        {/* VISTA: PRÓXIMAS */}
         {view === "próximas" && (
           <div style={{ padding: "7px 0" }}>
             {tracks.slice(currentIndex + 1).length > 0 ? (
-              tracks.slice(currentIndex + 1).map((t, i) => (
-                <div key={t.id} style={{ display: "flex", padding: "13px 16px", alignItems: "center", borderBottom: "1px solid var(--border-faint)" }}>
-                  <p 
+              tracks.slice(currentIndex + 1).map((t, i) => {
+                const actualIndex = currentIndex + 1 + i;
+                return (
+                  <div 
+                    key={t.id} 
+                    draggable // Habilita el arrastre
+                    onDragStart={() => setDraggedIdx(actualIndex)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (draggedIdx !== null && onReorder && draggedIdx !== actualIndex) {
+                        onReorder(draggedIdx, actualIndex);
+                      }
+                      setDraggedIdx(null);
+                    }}
                     style={{ 
-                      flex: 1, 
-                      fontSize: "12px", 
-                      color: "var(--text-main)", 
-                      cursor: "pointer",
-                      margin: 0
-                    }} 
-                    onClick={() => onPlayAt(currentIndex + 1 + i)}
+                      display: "flex", 
+                      padding: "0 16px", 
+                      height: "48px",
+                      alignItems: "center", 
+                      borderBottom: "1px solid var(--border-faint)",
+                      cursor: "grab",
+                      background: draggedIdx === actualIndex ? "rgba(255,255,255,0.1)" : "transparent",
+                      transition: "background 0.2s"
+                    }}
                   >
-                    {t.title}
-                  </p>
-                  <button 
-                    onClick={() => onRemoveTrack(currentIndex + 1 + i)} 
-                    style={{ background: "none", border: "none", color: "#ff5a5a", cursor: "pointer", fontSize: "16px", padding: "0 8px" }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))
+                    <p 
+                      style={{ 
+                        flex: 1, 
+                        fontSize: "11px", 
+                        color: "var(--text-main)", 
+                        cursor: "pointer",
+                        margin: 0,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis"
+                      }} 
+                      onClick={() => onPlayAt(actualIndex)}
+                    >
+                      {t.title}
+                    </p>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveTrack(actualIndex);
+                      }} 
+                      style={{ 
+                        background: "none", 
+                        border: "none", 
+                        color: "#ff5a5a", 
+                        cursor: "pointer", 
+                        fontSize: "16px", 
+                        width: "32px",    // Ancho fijo
+                        height: "32px",   // Alto fijo
+                        display: "flex",  // Centrado total
+                        alignItems: "center", 
+                        justifyContent: "center",
+                        padding: "0",     // Quitamos padding manual
+                        flexShrink: 0
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })
             ) : (
               <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", marginTop: "40px" }}>No hay canciones en cola</p>
             )}
@@ -135,9 +183,7 @@ export function QueuePanel({
                       cursor: "pointer",
                       margin: 0
                     }}
-                    onClick={() => {
-                        
-                    }}
+                    onClick={() => {}}
                   >
                     {t.title}
                   </p>

@@ -29,7 +29,6 @@ export function MusicPlayer() {
   const mood = detectMood(currentTrack?.title ?? "");
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
-  // CONFIGURACIÓN DE COLORES DINÁMICOS
   const theme = isDarkMode ? {
     "--bg-base": "#050505",
     "--bg-card": "rgba(20, 20, 20, 0.8)",
@@ -50,13 +49,102 @@ export function MusicPlayer() {
     setCurrentIndex(player.getCurrentIndex());
   }, [player]);
 
+  const handleNext = useCallback(() => {
+  
+    if (currentIndex === activeTracks.length - 1) {
+      player.pause();
+      player.getAudio().currentTime = 0;
+      setPlaying(false);
+      setProgress(0);
+    } else {
+      player.skipNext();
+      syncPlayerState();
+    }
+  }, [currentIndex, activeTracks.length, player, syncPlayerState]);
+
+  const handlePrev = () => {
+    if (player.getAudio().currentTime > 3) {
+      player.getAudio().currentTime = 0;
+    } else {
+      player.skipPrev();
+      syncPlayerState();
+    }
+  };
+
+  const handlePlaySelected = () => {
+    const toPlay = allTracks.filter(t => selectedIds.includes(t.id));
+    if (toPlay.length > 0) {
+      playAt(0, toPlay);
+      setSelectedIds([]); 
+    }
+  };
+
+  const handleReorder = (draggedIndex: number, targetIndex: number) => {
+    const audio = player.getAudio();
+    const playingTrackId = activeTracks[currentIndex]?.id;
+    const savedTime = audio.currentTime;
+    const wasPlaying = !audio.paused;
+    const newList = [...activeTracks];
+    const [movedItem] = newList.splice(draggedIndex, 1);
+    newList.splice(targetIndex, 0, movedItem);
+    player.loadPlaylist(newList);
+    const newIdx = newList.findIndex(t => t.id === playingTrackId);
+    if (newIdx !== -1) {
+      player.goToTrack(newIdx);
+      audio.currentTime = savedTime;
+      if (wasPlaying) player.play(); else player.pause();
+    }
+    setActiveTracks(newList);
+    if (newIdx !== -1) setCurrentIndex(newIdx);
+  };
+
+  const handleRemoveTrack = (index: number) => {
+    const audio = player.getAudio();
+    const playingTrackId = activeTracks[currentIndex]?.id;
+    const savedTime = audio.currentTime;
+    const wasPlaying = !audio.paused;
+    const newList = [...activeTracks];
+    newList.splice(index, 1);
+    player.loadPlaylist(newList);
+    if (newList.length === 0) {
+      setActiveTracks([]);
+      setCurrentIndex(0);
+      setPlaying(false);
+      return;
+    }
+    let newIdx = newList.findIndex(t => t.id === playingTrackId);
+    if (newIdx !== -1) {
+      player.goToTrack(newIdx);
+      audio.currentTime = savedTime;
+      if (wasPlaying) player.play(); else player.pause();
+    } else {
+      newIdx = Math.min(index, newList.length - 1);
+      player.goToTrack(newIdx);
+      if (wasPlaying) player.play(); else player.pause();
+    }
+    setActiveTracks(newList);
+    setCurrentIndex(newIdx);
+  };
+
+  // --- EFECTOS ---
+  useEffect(() => {
+    if (!currentTrack || !playing) return;
+    if (progress > 2 && lastHistoryId.current !== currentTrack.id) {
+      setHistory(prev => {
+        const filtered = prev.filter(t => t.id !== currentTrack.id);
+        return [currentTrack, ...filtered].slice(0, 50);
+      });
+      lastHistoryId.current = currentTrack.id;
+    }
+  }, [progress, currentTrack, playing]);
+
   useEffect(() => {
     const audio = player.getAudio();
     const onTime = () => setProgress(audio.currentTime);
     const onDuration = () => setDuration(audio.duration);
     const onPlay = () => { setPlaying(true); syncPlayerState(); };
     const onPause = () => setPlaying(false);
-    const onEnded = () => handleNext();
+    const onEnded = () => handleNext(); 
 
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onDuration);
@@ -71,32 +159,7 @@ export function MusicPlayer() {
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onEnded);
     };
-  }, [player, syncPlayerState]);
-
-  useEffect(() => {
-    if (!currentTrack || !playing) return;
-    if (progress > 5 && lastHistoryId.current !== currentTrack.id) {
-      setHistory(prev => {
-        const filtered = prev.filter(t => t.id !== currentTrack.id);
-        return [currentTrack, ...filtered].slice(0, 50);
-      });
-      lastHistoryId.current = currentTrack.id;
-    }
-  }, [progress, currentTrack, playing]);
-
-  const handleNext = () => {
-    player.skipNext();
-    syncPlayerState();
-  };
-
-  const handlePrev = () => {
-    if (player.getAudio().currentTime > 3) {
-      player.getAudio().currentTime = 0;
-    } else {
-      player.skipPrev();
-      syncPlayerState();
-    }
-  };
+  }, [player, syncPlayerState, handleNext]);
 
   const playAt = useCallback((index: number, list?: Track[]) => {
     const targetList = list || activeTracks;
@@ -115,7 +178,6 @@ export function MusicPlayer() {
     }}>
       <ParticleCanvas mood={mood} playing={playing} />
 
-      {/* HEADER */}
       <div style={{ 
         display: "flex", alignItems: "center", justifyContent: "space-between", 
         padding: "12px 24px", borderBottom: "1px solid var(--border-faint)", 
@@ -128,26 +190,28 @@ export function MusicPlayer() {
             {isDarkMode ? "☀️" : "🌙"}
           </button>
           
-          {selectedIds.length > 0 && (
-            <button 
-              onClick={() => {
-                const selected = allTracks.filter(t => selectedIds.includes(t.id));
-                playAt(0, selected);
-                setSelectedIds([]);
-              }} 
-              style={{ background: mood.primary, color: "#000", border: "none", padding: "8px 16px", fontSize: "12px", fontWeight: 900, borderRadius: "4px", cursor: "pointer" }}
-            >
-              REPRODUCIR SELECCIÓN ({selectedIds.length})
-            </button>
-          )}
-
           <div style={{ display: "flex", gap: "8px" }}>
+            {selectedIds.length > 0 && (
+              <button 
+                onClick={handlePlaySelected}
+                style={{ 
+                  background: mood.primary, border: "none", color: "#000", 
+                  padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" 
+                }}
+              >
+                REPRODUCIR SELECCIÓN ({selectedIds.length})
+              </button>
+            )}
+
             <button 
               onClick={async () => {
                 const found = await Scanner.scanFolder();
                 if (found.length) setAllTracks(prev => [...prev, ...found]);
               }} 
-              style={{ background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer" }}
+              style={{ 
+                background: "none", border: `1px solid ${mood.primary}`, color: mood.primary, 
+                padding: "8px 16px", fontSize: "12px", borderRadius: "6px", cursor: "pointer" 
+              }}
             >
               CARGAR CARPETA
             </button>
@@ -158,14 +222,9 @@ export function MusicPlayer() {
                 if (track) setAllTracks(prev => [...prev, track]);
               }} 
               style={{ 
-                background: mood.primary, 
-                border: "none", 
-                color: "#000", 
-                padding: "8px 16px", 
-                fontSize: "12px", 
-                borderRadius: "6px", 
-                cursor: "pointer",
-                fontWeight: "bold"
+                background: mood.primary, border: "none", color: "#000", 
+                padding: "8px 16px", fontSize: "12px", borderRadius: "6px", 
+                cursor: "pointer", fontWeight: "bold" 
               }}
             >
               SELECCIONAR ARCHIVO
@@ -174,14 +233,15 @@ export function MusicPlayer() {
         </div>
       </div>
 
-      {/* CONTENIDO PRINCIPAL */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden", zIndex: 5 }}>
         <div style={{ width: "320px", borderRight: "1px solid var(--border-faint)", background: "var(--bg-panel)" }}>
           <QueuePanel
             tracks={activeTracks} history={history} currentIndex={currentIndex}
             playing={playing} progress={progress} duration={duration}
             pct={pct} mood={mood} view={queueView}
-            onSetView={setQueueView} onPlayAt={playAt} onRemoveTrack={() => {}}
+            onSetView={setQueueView} onPlayAt={playAt} 
+            onRemoveTrack={handleRemoveTrack}
+            onReorder={handleReorder}
           />
         </div>
 
