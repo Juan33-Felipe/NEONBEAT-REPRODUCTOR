@@ -17,7 +17,6 @@ interface Props {
   onSetView: (v: QueueView) => void;
   onPlayAt: (i: number) => void;
   onRemoveTrack: (i: number) => void;
-  // Nueva prop para el reordenamiento
   onReorder?: (draggedIndex: number, targetIndex: number) => void;
 }
 
@@ -103,7 +102,7 @@ export function QueuePanel({
                 return (
                   <div 
                     key={t.id} 
-                    draggable // Habilita el arrastre
+                    draggable 
                     onDragStart={() => setDraggedIdx(actualIndex)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
@@ -149,12 +148,12 @@ export function QueuePanel({
                         color: "#ff5a5a", 
                         cursor: "pointer", 
                         fontSize: "16px", 
-                        width: "32px",    // Ancho fijo
-                        height: "32px",   // Alto fijo
-                        display: "flex",  // Centrado total
+                        width: "32px",    
+                        height: "32px",   
+                        display: "flex",  
                         alignItems: "center", 
                         justifyContent: "center",
-                        padding: "0",     // Quitamos padding manual
+                        padding: "0",     
                         flexShrink: 0
                       }}
                     >
