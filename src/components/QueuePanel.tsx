@@ -62,6 +62,7 @@ export function QueuePanel({
               color: view === v ? mood.primary : "var(--text-muted)",
               borderBottom: `2px solid ${view === v ? mood.primary : "transparent"}`,
               transition: "all 0.3s"
+              
             }}
           >
             {v}
