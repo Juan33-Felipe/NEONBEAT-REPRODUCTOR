@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Track {
+  id             String          @id @default(uuid())
+  title          String
+  artist         String          @default("Biblioteca Local")
+  fileName       String
+  mimeType       String
+  format         String
+  sizeBytes      Int
+  storagePath    String          @unique
+  favorite       Boolean         @default(false)
+  playCount      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  playbackEvents PlaybackEvent[]
+
+  @@index([title])
+  @@index([artist])
+  @@index([favorite])
+  @@index([createdAt])
+}
+
+model PlaybackEvent {
+  id              String   @id @default(uuid())
+  trackId         String
+  eventType       String
+  positionSeconds Float    @default(0)
+  createdAt       DateTime @default(now())
+  track           Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([trackId])
+  @@index([eventType])
+  @@index([createdAt])
+}

@@ -1,0 +1,56 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neonbeat-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      DATABASE_URL: "file:/app/data/neonbeat.db"
+      STORAGE_DIR: "/app/storage/audio"
+      MAX_FILE_SIZE_BYTES: "${MAX_FILE_SIZE_BYTES:-52428800}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-*}"
+      SEED_ON_START: "${SEED_ON_START:-true}"
+    volumes:
+      - neonbeat_sqlite_data:/app/data
+      - ./backend/storage/audio:/app/storage/audio
+    cpus: ${BACKEND_CPU_LIMIT:-0.50}
+    mem_limit: ${BACKEND_MEM_LIMIT:-512M}
+    deploy:
+      resources:
+        limits:
+          cpus: "${BACKEND_CPU_LIMIT:-0.50}"
+          memory: "${BACKEND_MEM_LIMIT:-512M}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: "${VITE_API_URL:-http://localhost:3001}"
+    container_name: neonbeat-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    cpus: ${FRONTEND_CPU_LIMIT:-0.50}
+    mem_limit: ${FRONTEND_MEM_LIMIT:-256M}
+    deploy:
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPU_LIMIT:-0.50}"
+          memory: "${FRONTEND_MEM_LIMIT:-256M}"
+
+volumes:
+  neonbeat_sqlite_data:

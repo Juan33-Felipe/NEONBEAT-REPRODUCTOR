@@ -39,6 +39,7 @@ interface Props {
   onEnqueueTrack?: (track: Track) => void;
   onPlayNextTrack?: (track: Track) => void;
   onToggleFavorite?: (id: string) => void;
+  onEditTrack?: (track: Track) => void;
   onRequestLoadFiles?: () => void;
   onRequestLoadFolder?: () => void;
   onTogglePlay?: () => void;
@@ -58,6 +59,7 @@ export function AllTracksList({
   onEnqueueTrack,
   onPlayNextTrack,
   onToggleFavorite,
+  onEditTrack,
   onRequestLoadFiles,
   onRequestLoadFolder,
   onTogglePlay,
@@ -336,6 +338,12 @@ export function AllTracksList({
           </button>
 
           <div
+            onClick={() => {
+              if (activeTrack && onEditTrack) {
+                onEditTrack(activeTrack);
+              }
+            }}
+            title={activeTrack ? "Editar título y artista" : undefined}
             style={{
               width: "38px",
               height: "38px",
@@ -347,6 +355,7 @@ export function AllTracksList({
               alignItems: "center",
               justifyContent: "center",
               color: "#ffffff",
+              cursor: activeTrack && onEditTrack ? "pointer" : "default",
             }}
           >
             <MoreHorizontalIcon size={16} />
@@ -536,6 +545,9 @@ export function AllTracksList({
                     }}
                   >
                     {track.artist || track.fileName}
+                    {typeof track.playCount === "number" && track.playCount > 0
+                      ? ` • ${track.playCount} reprod.`
+                      : ""}
                   </p>
                 </div>
 
@@ -543,6 +555,21 @@ export function AllTracksList({
                   style={{ display: "flex", alignItems: "center", gap: "8px" }}
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {onEditTrack && (
+                    <button
+                      onClick={() => onEditTrack(track)}
+                      title="Editar pista"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "rgba(255,255,255,0.55)",
+                        cursor: "pointer",
+                        padding: "6px",
+                      }}
+                    >
+                      <MoreHorizontalIcon size={16} />
+                    </button>
+                  )}
                   {onToggleFavorite && (
                     <button
                       onClick={() => onToggleFavorite(track.id)}
@@ -784,6 +811,9 @@ export function AllTracksList({
                   }}
                 >
                   {track.artist || track.format || "Local Audio"}
+                  {typeof track.playCount === "number" && track.playCount > 0
+                    ? ` • ${track.playCount} ▶`
+                    : ""}
                 </p>
               </div>
             );

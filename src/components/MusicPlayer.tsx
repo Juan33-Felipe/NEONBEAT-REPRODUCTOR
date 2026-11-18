@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { MusicPlayer as PlayerService } from "../engine/Player";
 import { Scanner } from "../library/Scanner";
 import { detectMood } from "../services/moodDetector";
+import { api, ApiError } from "../services/api";
 import { RepeatMode, Track } from "../shared/Models";
 import { PlayerControls } from "./PlayerControls";
 import { QueuePanel, QueueView } from "./QueuePanel";
@@ -46,18 +47,33 @@ export function MusicPlayer() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [isErrorToast, setIsErrorToast] = useState(false);
+  const [isLocalFallback, setIsLocalFallback] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const lastHistoryId = useRef<string | null>(null);
+  // Estado para edición de metadatos (PATCH /api/tracks/:id)
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editArtist, setEditArtist] = useState("");
+
+  // Control de sesión de reproducción para registrar una sola vez por inicio real
+  const playSessionIdRef = useRef<number>(1);
+  const registeredSessionKeyRef = useRef<string | null>(null);
+  const prevTrackIdRef = useRef<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const currentTrack = activeTracks[currentIndex] ?? null;
   const mood = detectMood(currentTrack?.title ?? "");
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, isError = false) => {
     setToast(msg);
+    setIsErrorToast(isError);
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2600);
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      setIsErrorToast(false);
+    }, isError ? 4000 : 2600);
   }, []);
 
   const syncPlayerState = useCallback(() => {
@@ -66,10 +82,56 @@ export function MusicPlayer() {
     setActiveTracks([...player.getPlaylist()]);
   }, [player]);
 
+  const applyTrackUpdateEverywhere = useCallback(
+    (updated: Track) => {
+      setAllTracks((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
+      const updatedQueue = player.updateTrackInQueue(updated);
+      setActiveTracks([...updatedQueue]);
+      setHistory((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
+    },
+    [player]
+  );
+
+  // Cargar catálogo persistido desde el backend al iniciar
+  const fetchCatalogFromBackend = useCallback(async () => {
+    try {
+      const serverTracks = await api.getTracks();
+      setIsLocalFallback(false);
+      setAllTracks(serverTracks);
+
+      if (serverTracks.length > 0 && player.getPlaylist().length === 0) {
+        player.loadPlaylist(serverTracks, 0);
+        setActiveTracks([...serverTracks]);
+        setCurrentIndex(0);
+      }
+    } catch (err: any) {
+      if (err instanceof ApiError && err.isNetworkError) {
+        setIsLocalFallback(true);
+        showToast("Modo respaldo local activo (servidor backend no disponible)", true);
+      } else {
+        showToast(err?.message || "Error al consultar el catálogo del servidor", true);
+      }
+    }
+  }, [player, showToast]);
+
+  useEffect(() => {
+    fetchCatalogFromBackend();
+  }, [fetchCatalogFromBackend]);
+
+  // Incrementar identificador de sesión cuando cambia la pista activa
+  useEffect(() => {
+    const currentId = currentTrack?.id ?? null;
+    if (currentId !== prevTrackIdRef.current) {
+      prevTrackIdRef.current = currentId;
+      playSessionIdRef.current += 1;
+    }
+  }, [currentTrack?.id]);
+
   const playAt = useCallback(
     (index: number, list?: Track[]) => {
       const targetList = list ? [...list] : [...activeTracks];
       if (targetList.length === 0) return;
+      playSessionIdRef.current += 1;
       player.loadPlaylist(targetList, index);
       setActiveTracks(targetList);
       player.play();
@@ -78,18 +140,17 @@ export function MusicPlayer() {
     [player, activeTracks, syncPlayerState]
   );
 
-  const importTracks = useCallback(
+  const mergeTracksIntoState = useCallback(
     (incoming: Track[], autoPlayFirst = false) => {
       if (incoming.length === 0) return;
 
       setAllTracks((prev) => {
-        const existingKeys = new Set(prev.map((t) => `${t.fileName}:${t.size ?? 0}`));
-        const uniqueNew = incoming.filter(
-          (t) => !existingKeys.has(`${t.fileName}:${t.size ?? 0}`)
-        );
+        const existingIds = new Set(prev.map((t) => t.id));
+        const uniqueNew = incoming.filter((t) => !existingIds.has(t.id));
         const merged = [...prev, ...uniqueNew];
 
         if (player.getPlaylist().length === 0 && merged.length > 0) {
+          playSessionIdRef.current += 1;
           player.loadPlaylist(merged, 0);
           setActiveTracks([...merged]);
           setCurrentIndex(0);
@@ -97,47 +158,81 @@ export function MusicPlayer() {
             player.play();
           }
         } else if (autoPlayFirst && incoming[0]) {
+          playSessionIdRef.current += 1;
           const updatedQueue = player.enqueueNext(incoming[0]);
           setActiveTracks([...updatedQueue]);
           player.skipNext();
           syncPlayerState();
-        }
-
-        if (uniqueNew.length > 0) {
-          showToast(
-            uniqueNew.length === 1
-              ? `Pista cargada: ${uniqueNew[0].title}`
-              : `${uniqueNew.length} pistas añadidas a la biblioteca`
-          );
-        } else {
-          showToast("Las pistas seleccionadas ya estaban en la biblioteca");
+        } else if (uniqueNew.length > 0) {
+          let updatedQueue = player.getPlaylist();
+          for (const t of uniqueNew) {
+            updatedQueue = player.enqueue(t);
+          }
+          setActiveTracks([...updatedQueue]);
         }
 
         return merged;
       });
     },
-    [player, showToast, syncPlayerState]
+    [player, syncPlayerState]
+  );
+
+  const processSelectedFiles = useCallback(
+    async (files: File[], autoPlayFirst = false) => {
+      if (files.length === 0) {
+        showToast("No se detectaron archivos de audio compatibles", true);
+        return;
+      }
+
+      setIsUploading(true);
+      try {
+        const uploadedTracks = await api.uploadTracks(files);
+        setIsLocalFallback(false);
+        mergeTracksIntoState(uploadedTracks, autoPlayFirst);
+        showToast(
+          uploadedTracks.length === 1
+            ? `Pista guardada: ${uploadedTracks[0].title}`
+            : `${uploadedTracks.length} pistas subidas al servidor`
+        );
+      } catch (err: any) {
+        if (err instanceof ApiError && err.isNetworkError) {
+          setIsLocalFallback(true);
+          const localTracks = Scanner.createTracksFromFiles(files);
+          mergeTracksIntoState(localTracks, autoPlayFirst);
+          showToast(
+            `Modo respaldo local: ${localTracks.length} pista(s) cargadas sin servidor`,
+            true
+          );
+        } else {
+          showToast(err?.message || "Error al subir archivos al servidor", true);
+        }
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [mergeTracksIntoState, showToast]
   );
 
   const handleLoadFiles = useCallback(async () => {
-    const tracks = await Scanner.scanFiles();
-    if (tracks.length) {
-      importTracks(tracks, tracks.length === 1);
+    const files = await Scanner.pickFiles();
+    if (files.length > 0) {
+      await processSelectedFiles(files, files.length === 1);
     }
-  }, [importTracks]);
+  }, [processSelectedFiles]);
 
   const handleLoadFolder = useCallback(async () => {
-    const found = await Scanner.scanFolder();
-    if (found.length) {
-      importTracks(found, false);
+    const files = await Scanner.pickFolderFiles();
+    if (files.length > 0) {
+      await processSelectedFiles(files, false);
     } else {
       showToast("No se seleccionaron archivos de la carpeta");
     }
-  }, [importTracks, showToast]);
+  }, [processSelectedFiles, showToast]);
 
   const handleNext = useCallback(
     (autoEnded = false) => {
       if (activeTracks.length === 0) return;
+      playSessionIdRef.current += 1;
       const next = player.skipNext(autoEnded);
       if (!next && autoEnded) {
         setPlaying(false);
@@ -153,11 +248,21 @@ export function MusicPlayer() {
     if (player.getAudio().currentTime > 3) {
       player.getAudio().currentTime = 0;
       setProgress(0);
+      if (currentTrack && !currentTrack.isLocalFallback && !isLocalFallback) {
+        api
+          .recordPlaybackEvent({
+            trackId: currentTrack.id,
+            eventType: "seek",
+            positionSeconds: 0,
+          })
+          .catch(() => {});
+      }
     } else {
+      playSessionIdRef.current += 1;
       player.skipPrev();
       syncPlayerState();
     }
-  }, [activeTracks.length, player, syncPlayerState]);
+  }, [activeTracks.length, currentTrack, isLocalFallback, player, syncPlayerState]);
 
   const handlePlaySelected = () => {
     const toPlay = allTracks.filter((t) => selectedIds.includes(t.id));
@@ -204,11 +309,25 @@ export function MusicPlayer() {
     showToast("Cola de próximas pistas limpiada");
   };
 
-  const handleRemoveFromLibrary = (index: number) => {
-    const trackToRemove = allTracks[index];
+  const handleRemoveFromLibrary = async (index: number) => {
+    const targetList =
+      activeSection === "recent" && history.length > 0 ? history : allTracks;
+    const trackToRemove = targetList[index];
     if (!trackToRemove) return;
 
-    setAllTracks((prev) => prev.filter((_, i) => i !== index));
+    if (!trackToRemove.isLocalFallback && !isLocalFallback) {
+      try {
+        await api.deleteTrack(trackToRemove.id);
+      } catch (err: any) {
+        if (err instanceof ApiError && err.statusCode !== 404) {
+          showToast(err.message || "Error al eliminar la pista del servidor", true);
+          return;
+        }
+      }
+    }
+
+    setAllTracks((prev) => prev.filter((t) => t.id !== trackToRemove.id));
+    setHistory((prev) => prev.filter((t) => t.id !== trackToRemove.id));
     setSelectedIds((prev) => prev.filter((id) => id !== trackToRemove.id));
 
     const queueIdx = activeTracks.findIndex((t) => t.id === trackToRemove.id);
@@ -218,13 +337,64 @@ export function MusicPlayer() {
     showToast(`Eliminada: ${trackToRemove.title}`);
   };
 
-  const handleToggleFavorite = (id: string) => {
-    setAllTracks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, favorite: !t.favorite } : t))
-    );
-    setActiveTracks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, favorite: !t.favorite } : t))
-    );
+  const handleToggleFavorite = async (id: string) => {
+    const target =
+      allTracks.find((t) => t.id === id) || activeTracks.find((t) => t.id === id);
+    if (!target) return;
+
+    const nextFav = !target.favorite;
+    const optimisticTrack: Track = { ...target, favorite: nextFav };
+    applyTrackUpdateEverywhere(optimisticTrack);
+
+    if (!target.isLocalFallback && !isLocalFallback) {
+      try {
+        const updatedFromServer = await api.updateTrack(id, { favorite: nextFav });
+        applyTrackUpdateEverywhere(updatedFromServer);
+      } catch (err: any) {
+        applyTrackUpdateEverywhere(target);
+        showToast(err?.message || "No se pudo actualizar favorito en el servidor", true);
+      }
+    }
+  };
+
+  const handleOpenEditTrack = (track: Track) => {
+    setEditingTrack(track);
+    setEditTitle(track.title);
+    setEditArtist(track.artist || "");
+  };
+
+  const handleSaveEditTrack = async () => {
+    if (!editingTrack) return;
+    const trimmedTitle = editTitle.trim();
+    const trimmedArtist = editArtist.trim() || "Biblioteca Local";
+
+    if (!trimmedTitle) {
+      showToast("El título no puede estar vacío", true);
+      return;
+    }
+
+    if (!editingTrack.isLocalFallback && !isLocalFallback) {
+      try {
+        const updated = await api.updateTrack(editingTrack.id, {
+          title: trimmedTitle,
+          artist: trimmedArtist,
+        });
+        applyTrackUpdateEverywhere(updated);
+        setEditingTrack(null);
+        showToast(`Actualizada: ${updated.title}`);
+      } catch (err: any) {
+        showToast(err?.message || "Error al actualizar la pista en el servidor", true);
+      }
+    } else {
+      const updatedLocal: Track = {
+        ...editingTrack,
+        title: trimmedTitle,
+        artist: trimmedArtist,
+      };
+      applyTrackUpdateEverywhere(updatedLocal);
+      setEditingTrack(null);
+      showToast(`Actualizada localmente: ${updatedLocal.title}`);
+    }
   };
 
   const handleEnqueueTrack = (track: Track) => {
@@ -232,6 +402,7 @@ export function MusicPlayer() {
     const updated = player.enqueue(track);
     setActiveTracks([...updated]);
     if (wasEmpty) {
+      playSessionIdRef.current += 1;
       setCurrentIndex(0);
       player.play();
     }
@@ -243,6 +414,7 @@ export function MusicPlayer() {
     const updated = player.enqueueNext(track);
     setActiveTracks([...updated]);
     if (wasEmpty) {
+      playSessionIdRef.current += 1;
       setCurrentIndex(0);
       player.play();
     }
@@ -254,6 +426,7 @@ export function MusicPlayer() {
     if (idxInActive !== -1) {
       playAt(idxInActive);
     } else {
+      playSessionIdRef.current += 1;
       const updated = player.enqueueNext(track);
       setActiveTracks([...updated]);
       player.skipNext();
@@ -274,17 +447,31 @@ export function MusicPlayer() {
     showToast("Shuffle Play activado");
   };
 
-  // --- HISTORIAL ---
+  // --- REGISTRO DE REPRODUCCIÓN (UNA SOLA VEZ POR INICIO REAL) E HISTORIAL ---
   useEffect(() => {
     if (!currentTrack || !playing) return;
-    if (progress > 2 && lastHistoryId.current !== currentTrack.id) {
+    const sessionKey = `${currentTrack.id}:${playSessionIdRef.current}`;
+
+    if (progress > 0.15 && registeredSessionKeyRef.current !== sessionKey) {
+      registeredSessionKeyRef.current = sessionKey;
+
       setHistory((prev) => {
         const filtered = prev.filter((t) => t.id !== currentTrack.id);
         return [currentTrack, ...filtered].slice(0, 50);
       });
-      lastHistoryId.current = currentTrack.id;
+
+      if (!currentTrack.isLocalFallback && !isLocalFallback) {
+        api
+          .registerPlay(currentTrack.id, progress)
+          .then((updatedTrack) => {
+            applyTrackUpdateEverywhere(updatedTrack);
+          })
+          .catch(() => {
+            // Silently ignore if backend momentarily disconnects mid-stream
+          });
+      }
     }
-  }, [progress, currentTrack, playing]);
+  }, [progress, currentTrack, playing, isLocalFallback, applyTrackUpdateEverywhere]);
 
   // --- EVENTOS DE AUDIO ---
   useEffect(() => {
@@ -295,14 +482,45 @@ export function MusicPlayer() {
       setPlaying(true);
       syncPlayerState();
     };
-    const onPause = () => setPlaying(false);
-    const onEnded = () => handleNext(true);
+    const onPause = () => {
+      setPlaying(false);
+      const track = player.getCurrentTrack();
+      if (track && !track.isLocalFallback && !isLocalFallback && !audio.ended) {
+        api
+          .recordPlaybackEvent({
+            trackId: track.id,
+            eventType: "pause",
+            positionSeconds: audio.currentTime || 0,
+          })
+          .catch(() => {});
+      }
+    };
+    const onEnded = () => {
+      const track = player.getCurrentTrack();
+      if (track && !track.isLocalFallback && !isLocalFallback) {
+        api
+          .recordPlaybackEvent({
+            trackId: track.id,
+            eventType: "ended",
+            positionSeconds: audio.duration || audio.currentTime || 0,
+          })
+          .catch(() => {});
+      }
+      handleNext(true);
+    };
+    const onError = () => {
+      const track = player.getCurrentTrack();
+      if (track) {
+        showToast(`Error al transmitir audio: ${track.title}`, true);
+      }
+    };
 
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onDuration);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
 
     return () => {
       audio.removeEventListener("timeupdate", onTime);
@@ -310,8 +528,9 @@ export function MusicPlayer() {
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
     };
-  }, [player, syncPlayerState, handleNext]);
+  }, [player, syncPlayerState, handleNext, isLocalFallback, showToast]);
 
   // --- ATAJOS DE TECLADO ---
   useEffect(() => {
@@ -390,11 +609,11 @@ export function MusicPlayer() {
         e.preventDefault();
         setIsDraggingFiles(false);
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          const dropped = Scanner.createTracksFromFiles(e.dataTransfer.files);
-          if (dropped.length > 0) {
-            importTracks(dropped, true);
+          const validFiles = Scanner.filterMusicFiles(e.dataTransfer.files);
+          if (validFiles.length > 0) {
+            processSelectedFiles(validFiles, true);
           } else {
-            showToast("No se detectaron archivos de audio compatibles");
+            showToast("No se detectaron archivos de audio compatibles", true);
           }
         }
       }}
@@ -450,8 +669,134 @@ export function MusicPlayer() {
               Suelta tus archivos de audio aquí
             </p>
             <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.6)", marginTop: "6px" }}>
-              MP3, WAV, FLAC, OGG, AAC, M4A
+              MP3, WAV, FLAC, OGG, AAC, M4A, OPUS, WEBM
             </p>
+          </div>
+        )}
+
+        {/* MODAL DE EDICIÓN DE METADATOS (PATCH /api/tracks/:id) */}
+        {editingTrack && (
+          <div
+            onClick={() => setEditingTrack(null)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(6, 5, 12, 0.65)",
+              backdropFilter: "blur(16px)",
+              zIndex: 90,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "400px",
+                padding: "28px",
+                borderRadius: "26px",
+                background: "rgba(22, 18, 36, 0.92)",
+                border: "1px solid rgba(255, 255, 255, 0.2)",
+                boxShadow: "0 24px 60px rgba(0, 0, 0, 0.6)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: "19px", fontWeight: 800, color: "#ffffff" }}>
+                Editar metadatos de pista
+              </h3>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,0.65)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Título
+                </label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    borderRadius: "12px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    color: "#ffffff",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    outline: "none",
+                  }}
+                />
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,0.65)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Artista
+                </label>
+                <input
+                  type="text"
+                  value={editArtist}
+                  onChange={(e) => setEditArtist(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 14px",
+                    borderRadius: "12px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    color: "#ffffff",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    outline: "none",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "6px" }}>
+                <button
+                  onClick={() => setEditingTrack(null)}
+                  style={{
+                    padding: "9px 18px",
+                    borderRadius: "999px",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    color: "#ffffff",
+                    fontSize: "13.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveEditTrack}
+                  style={{
+                    padding: "9px 22px",
+                    borderRadius: "999px",
+                    background: "#1ED760",
+                    border: "none",
+                    color: "#041f11",
+                    fontSize: "13.5px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -463,9 +808,13 @@ export function MusicPlayer() {
               bottom: "112px",
               left: "50%",
               transform: "translateX(-50%)",
-              background: "rgba(255, 255, 255, 0.12)",
+              background: isErrorToast
+                ? "rgba(220, 38, 38, 0.22)"
+                : "rgba(255, 255, 255, 0.12)",
               backdropFilter: "blur(24px) saturate(190%)",
-              border: "1px solid rgba(255, 255, 255, 0.24)",
+              border: isErrorToast
+                ? "1px solid rgba(248, 113, 113, 0.55)"
+                : "1px solid rgba(255, 255, 255, 0.24)",
               color: "#ffffff",
               padding: "10px 22px",
               borderRadius: "999px",
@@ -484,8 +833,8 @@ export function MusicPlayer() {
                 width: "8px",
                 height: "8px",
                 borderRadius: "50%",
-                background: "#1ED760",
-                boxShadow: "0 0 10px #1ED760",
+                background: isErrorToast ? "#F87171" : "#1ED760",
+                boxShadow: isErrorToast ? "0 0 10px #F87171" : "0 0 10px #1ED760",
               }}
             />
             <span>{toast}</span>
@@ -640,6 +989,36 @@ export function MusicPlayer() {
 
           {/* Right: File Actions & User Profile Pill */}
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            {isLocalFallback && (
+              <button
+                onClick={fetchCatalogFromBackend}
+                title="Sin conexión al backend. Haz clic para reintentar conexión al servidor."
+                style={{
+                  background: "rgba(245, 158, 11, 0.18)",
+                  border: "1px solid rgba(245, 158, 11, 0.5)",
+                  borderRadius: "999px",
+                  color: "#FBBF24",
+                  padding: "6px 14px",
+                  fontSize: "12.5px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "7px",
+                    height: "7px",
+                    borderRadius: "50%",
+                    background: "#FBBF24",
+                  }}
+                />
+                <span>Modo Local</span>
+              </button>
+            )}
+
             {selectedIds.length > 0 && (
               <>
                 <button
@@ -687,6 +1066,7 @@ export function MusicPlayer() {
 
             <button
               onClick={handleLoadFolder}
+              disabled={isUploading}
               title="Cargar carpeta de música"
               style={{
                 background: "rgba(255, 255, 255, 0.08)",
@@ -697,7 +1077,8 @@ export function MusicPlayer() {
                 padding: "9px 18px",
                 fontSize: "13.5px",
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: isUploading ? "wait" : "pointer",
+                opacity: isUploading ? 0.65 : 1,
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
@@ -709,6 +1090,7 @@ export function MusicPlayer() {
 
             <button
               onClick={handleLoadFiles}
+              disabled={isUploading}
               title="Seleccionar archivos de audio"
               style={{
                 background: "rgba(30, 215, 96, 0.18)",
@@ -719,17 +1101,23 @@ export function MusicPlayer() {
                 padding: "9px 18px",
                 fontSize: "13.5px",
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: isUploading ? "wait" : "pointer",
+                opacity: isUploading ? 0.65 : 1,
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
               }}
             >
               <FileMusicIcon size={16} color="#1ED760" />
-              <span>Archivos</span>
+              <span>{isUploading ? "Subiendo..." : "Archivos"}</span>
             </button>
 
             <div
+              title={
+                isLocalFallback
+                  ? "Modo de respaldo local (sin conexión al backend)"
+                  : "Conectado al servidor backend (persistencia SQLite activa)"
+              }
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -746,7 +1134,9 @@ export function MusicPlayer() {
                   width: "28px",
                   height: "28px",
                   borderRadius: "50%",
-                  background: "linear-gradient(135deg, #1ED760, #6C8EFF)",
+                  background: isLocalFallback
+                    ? "linear-gradient(135deg, #F59E0B, #EA580C)"
+                    : "linear-gradient(135deg, #1ED760, #6C8EFF)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -918,6 +1308,7 @@ export function MusicPlayer() {
             <div style={{ marginTop: "auto" }}>
               <button
                 onClick={handleLoadFiles}
+                disabled={isUploading}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -931,11 +1322,11 @@ export function MusicPlayer() {
                   color: "#ffffff",
                   fontSize: "14px",
                   fontWeight: 700,
-                  cursor: "pointer",
+                  cursor: isUploading ? "wait" : "pointer",
                 }}
               >
                 <PlusIcon size={16} color="#1ED760" />
-                <span>Añadir Canciones</span>
+                <span>{isUploading ? "Subiendo..." : "Añadir Canciones"}</span>
               </button>
             </div>
           </aside>
@@ -975,6 +1366,7 @@ export function MusicPlayer() {
               onEnqueueTrack={handleEnqueueTrack}
               onPlayNextTrack={handlePlayNextTrack}
               onToggleFavorite={handleToggleFavorite}
+              onEditTrack={handleOpenEditTrack}
               onRequestLoadFiles={handleLoadFiles}
               onRequestLoadFolder={handleLoadFolder}
               onTogglePlay={() => player.togglePlay()}
@@ -1040,6 +1432,15 @@ export function MusicPlayer() {
           onSeek={(t) => {
             player.getAudio().currentTime = t;
             setProgress(t);
+            if (currentTrack && !currentTrack.isLocalFallback && !isLocalFallback) {
+              api
+                .recordPlaybackEvent({
+                  trackId: currentTrack.id,
+                  eventType: "seek",
+                  positionSeconds: t,
+                })
+                .catch(() => {});
+            }
           }}
           onVolumeChange={(v) => {
             player.setVolume(v);

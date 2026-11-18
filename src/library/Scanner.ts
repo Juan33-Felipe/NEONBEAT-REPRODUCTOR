@@ -31,31 +31,34 @@ export class Scanner {
 
   static createTrackFromFile(file: File): Track {
     const meta = this.parseMetadataFromName(file);
+    const localUrl = URL.createObjectURL(file);
     return {
       id: crypto.randomUUID(),
       title: meta.title,
       artist: meta.artist,
       fileName: file.name,
       file,
-      blobUrl: URL.createObjectURL(file),
+      streamUrl: localUrl,
+      blobUrl: localUrl,
       format: meta.format,
       size: meta.size,
+      sizeBytes: meta.size,
       favorite: false,
+      playCount: 0,
+      isLocalFallback: true,
     };
   }
 
-  static createTracksFromFiles(files: FileList | File[]): Track[] {
-    const list = Array.from(files);
-    const tracks: Track[] = [];
-    for (const file of list) {
-      if (this.isMusicFile(file.name)) {
-        tracks.push(this.createTrackFromFile(file));
-      }
-    }
-    return tracks;
+  static filterMusicFiles(files: FileList | File[]): File[] {
+    return Array.from(files).filter((file) => this.isMusicFile(file.name));
   }
 
-  static async scanFiles(): Promise<Track[]> {
+  static createTracksFromFiles(files: FileList | File[]): Track[] {
+    const validFiles = this.filterMusicFiles(files);
+    return validFiles.map((file) => this.createTrackFromFile(file));
+  }
+
+  static async pickFiles(): Promise<File[]> {
     try {
       if ("showOpenFilePicker" in window) {
         const handles = await (window as any).showOpenFilePicker({
@@ -70,12 +73,14 @@ export class Scanner {
           multiple: true,
         });
 
-        const tracks: Track[] = [];
+        const files: File[] = [];
         for (const handle of handles) {
           const file = await handle.getFile();
-          tracks.push(this.createTrackFromFile(file));
+          if (this.isMusicFile(file.name)) {
+            files.push(file);
+          }
         }
-        return tracks;
+        return files;
       } else {
         return new Promise((resolve) => {
           const input = document.createElement("input");
@@ -83,9 +88,9 @@ export class Scanner {
           input.multiple = true;
           input.accept = ".mp3,.wav,.ogg,.flac,.aac,.m4a,.opus,.webm,audio/*";
           input.onchange = (e: any) => {
-            const files = e.target.files;
-            if (files && files.length > 0) {
-              resolve(this.createTracksFromFiles(files));
+            const selected = e.target.files;
+            if (selected && selected.length > 0) {
+              resolve(this.filterMusicFiles(selected));
             } else {
               resolve([]);
             }
@@ -101,30 +106,25 @@ export class Scanner {
     }
   }
 
-  static async scanSingleFile(): Promise<Track | null> {
-    const tracks = await this.scanFiles();
-    return tracks[0] ?? null;
-  }
-
-  static async scanFolder(): Promise<Track[]> {
+  static async pickFolderFiles(): Promise<File[]> {
     if ("showDirectoryPicker" in window) {
-      return this.scanWithDirectoryPicker();
+      return this.pickWithDirectoryPicker();
     } else {
-      return this.scanWithFilePicker();
+      return this.pickWithDirectoryInput();
     }
   }
 
-  private static async scanWithDirectoryPicker(): Promise<Track[]> {
+  private static async pickWithDirectoryPicker(): Promise<File[]> {
     try {
       const dirHandle = await (window as any).showDirectoryPicker();
-      const tracks: Track[] = [];
+      const files: File[] = [];
 
       const scanDir = async (handle: any): Promise<void> => {
         for await (const entry of handle.values()) {
           if (entry.kind === "file") {
             if (this.isMusicFile(entry.name)) {
               const file = await entry.getFile();
-              tracks.push(this.createTrackFromFile(file));
+              files.push(file);
             }
           } else if (entry.kind === "directory") {
             try {
@@ -137,14 +137,14 @@ export class Scanner {
       };
 
       await scanDir(dirHandle);
-      return tracks;
+      return files;
     } catch (error: any) {
       if (error.name === "AbortError") return [];
-      return this.scanWithFilePicker();
+      return this.pickWithDirectoryInput();
     }
   }
 
-  private static async scanWithFilePicker(): Promise<Track[]> {
+  private static async pickWithDirectoryInput(): Promise<File[]> {
     return new Promise((resolve) => {
       const input = document.createElement("input");
       input.type = "file";
@@ -154,14 +154,29 @@ export class Scanner {
       (input as any).allowdirs = "true";
 
       input.onchange = async (e: any) => {
-        const files = e.target.files;
-        const tracks = files ? this.createTracksFromFiles(files) : [];
-        resolve(tracks);
+        const selected = e.target.files;
+        const files = selected ? this.filterMusicFiles(selected) : [];
+        resolve(files);
       };
 
       input.oncancel = () => resolve([]);
       input.click();
     });
+  }
+
+  static async scanFiles(): Promise<Track[]> {
+    const files = await this.pickFiles();
+    return files.map((f) => this.createTrackFromFile(f));
+  }
+
+  static async scanSingleFile(): Promise<Track | null> {
+    const tracks = await this.scanFiles();
+    return tracks[0] ?? null;
+  }
+
+  static async scanFolder(): Promise<Track[]> {
+    const files = await this.pickFolderFiles();
+    return files.map((f) => this.createTrackFromFile(f));
   }
 
   static isMusicFile(fileName: string): boolean {

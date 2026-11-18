@@ -16,6 +16,7 @@ export class MusicPlayer {
   private constructor() {
     this.playlist = new Sequence<Track>();
     this.audio = new Audio();
+    this.audio.crossOrigin = "anonymous";
     this.audio.preload = "metadata";
     this.state = {
       currentTrack: null,
@@ -35,6 +36,10 @@ export class MusicPlayer {
       MusicPlayer.instance = new MusicPlayer();
     }
     return MusicPlayer.instance;
+  }
+
+  private getTrackUrl(track: Track): string {
+    return track.streamUrl || track.blobUrl;
   }
 
   private initAudioAnalyser(): void {
@@ -84,8 +89,9 @@ export class MusicPlayer {
       const selected = this.playlist.getCurrentData();
       if (selected) {
         this.state.currentTrack = selected;
-        if (this.audio.src !== selected.blobUrl) {
-          this.audio.src = selected.blobUrl;
+        const targetUrl = this.getTrackUrl(selected);
+        if (this.audio.src !== targetUrl) {
+          this.audio.src = targetUrl;
           this.applyAudioSettings();
         }
       }
@@ -96,12 +102,24 @@ export class MusicPlayer {
     }
   }
 
+  updateTrackInQueue(updated: Track): Track[] {
+    let node = this.playlist.head;
+    while (node) {
+      if (node.data.id === updated.id) {
+        node.data = { ...node.data, ...updated };
+      }
+      node = node.next;
+    }
+    this.syncStateFromSequence();
+    return this.state.playlist;
+  }
+
   enqueue(track: Track): Track[] {
     const wasEmpty = this.playlist.size === 0;
     this.playlist.append(track);
     this.syncStateFromSequence();
     if (wasEmpty && this.state.currentTrack) {
-      this.audio.src = this.state.currentTrack.blobUrl;
+      this.audio.src = this.getTrackUrl(this.state.currentTrack);
       this.applyAudioSettings();
     }
     return this.state.playlist;
@@ -112,7 +130,7 @@ export class MusicPlayer {
     this.playlist.insertAfterCurrent(track);
     this.syncStateFromSequence();
     if (wasEmpty && this.state.currentTrack) {
-      this.audio.src = this.state.currentTrack.blobUrl;
+      this.audio.src = this.getTrackUrl(this.state.currentTrack);
       this.applyAudioSettings();
     }
     return this.state.playlist;
@@ -140,7 +158,7 @@ export class MusicPlayer {
     }
 
     if (isRemovingCurrent && this.state.currentTrack) {
-      this.audio.src = this.state.currentTrack.blobUrl;
+      this.audio.src = this.getTrackUrl(this.state.currentTrack);
       this.applyAudioSettings();
       if (wasPlaying) {
         this.play();
@@ -219,7 +237,7 @@ export class MusicPlayer {
     const nextTrack = this.playlist.next(true);
     if (nextTrack) {
       this.state.currentTrack = nextTrack;
-      this.audio.src = nextTrack.blobUrl;
+      this.audio.src = this.getTrackUrl(nextTrack);
       this.applyAudioSettings();
       this.play();
     }
@@ -231,7 +249,7 @@ export class MusicPlayer {
     const prevTrack = this.playlist.prev(true);
     if (prevTrack) {
       this.state.currentTrack = prevTrack;
-      this.audio.src = prevTrack.blobUrl;
+      this.audio.src = this.getTrackUrl(prevTrack);
       this.applyAudioSettings();
       this.play();
     }
@@ -242,7 +260,7 @@ export class MusicPlayer {
     const track = this.playlist.goTo(index);
     if (track) {
       this.state.currentTrack = track;
-      this.audio.src = track.blobUrl;
+      this.audio.src = this.getTrackUrl(track);
       this.applyAudioSettings();
       this.play();
     }

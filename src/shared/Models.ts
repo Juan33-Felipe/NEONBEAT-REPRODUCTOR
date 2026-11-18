@@ -5,12 +5,20 @@ export interface Track {
   title: string;
   artist?: string;
   fileName: string;
-  file: File;
+  file?: File;
+  streamUrl: string;
   blobUrl: string;
+  mimeType?: string;
   duration?: number;
   size?: number;
+  sizeBytes?: number;
+  storagePath?: string;
   format?: string;
   favorite?: boolean;
+  playCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  isLocalFallback?: boolean;
 }
 
 export interface PlayerState {

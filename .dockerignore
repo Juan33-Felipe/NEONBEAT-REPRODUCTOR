@@ -1,0 +1,11 @@
+node_modules
+dist
+backend/node_modules
+backend/dist
+backend/*.db
+backend/*.db-journal
+backend/storage/audio/*
+!backend/storage/audio/.gitkeep
+measurements/results/*
+!measurements/results/.gitkeep
+.git
